@@ -1,6 +1,6 @@
 # 图谱以图搜图 MCP Server
 
-基于 FastMCP 的病理图谱以图搜图服务，使用 PLIP 模型提取图像特征，ChromaDB 存储向量索引，实现基于内容的图像检索（CBIR - Content-Based Image Retrieval）。
+基于 FastMCP 的病理图谱以图搜图服务，使用 PLIP 模型提取图像特征，ChromaDB 存储向量索引，数据集使用**NCT-CRC-HE-100K**，实现基于内容的图像检索（CBIR - Content-Based Image Retrieval）。
 
 ## 📋 目录
 
