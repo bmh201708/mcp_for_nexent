@@ -19,7 +19,36 @@
 
 本仓库包含三个核心 MCP 服务：
 
-### 1. 📄 病理报告解析服务 (`pathology_mcp/`)
+### 1. 🖼️ 图像搜索服务 (`image_search_mcp/`)
+
+**功能**: 基于内容的图像检索（CBIR）服务，使用 PLIP 模型提取病理切片图像特征，通过向量相似度搜索找到最相似的历史确诊病例。**该服务可以为病理图片诊断提供重要参考依据**，帮助医生快速找到相似的历史病例，辅助诊断决策。
+
+**核心工具**:
+- `search_similar_cases`: 通过图像搜索相似病例（支持 URL、Base64、文件路径）
+- `search_similar_cases_from_file`: 从文件路径搜索相似病例
+
+**端口**: `18930`
+
+**适用场景**:
+- **病理图片诊断参考**: 为病理医生提供相似病例的视觉参考，辅助诊断决策
+- 病理切片图像相似病例检索
+- 诊断参考案例查找
+- 组织形态学特征匹配
+- 病例库检索
+
+**数据集**: 使用 NCT-CRC-HE-100K 数据集（约 10 万张病理切片图像）
+
+**诊断价值**:
+- 🎯 **快速参考**: 通过图像相似度快速找到历史相似病例，为诊断提供参考
+- 🎯 **提高准确性**: 基于大量历史病例的视觉特征匹配，提高诊断准确性
+- 🎯 **学习辅助**: 帮助年轻医生学习不同病理类型的视觉特征
+- 🎯 **质量控制**: 通过对比相似病例，辅助病理诊断的质量控制
+
+📖 **详细文档**: 请查看 [`image_search_mcp/README.md`](image_search_mcp/README.md)
+
+---
+
+### 2. 📄 病理报告解析服务 (`pathology_mcp/`)
 
 **功能**: 从原始病理报告文本中提取结构化信息，并提供 IHC 标记和基因突变的临床意义解释。
 
@@ -39,7 +68,7 @@
 
 ---
 
-### 2. 🔍 PubMed 文献搜索服务 (`pubmed_mcp/`)
+### 3. 🔍 PubMed 文献搜索服务 (`pubmed_mcp/`)
 
 **功能**: 通过 NCBI E-utilities API 搜索 PubMed 医学文献，特别适用于病理学相关的病例报告和临床研究检索。
 
@@ -58,28 +87,6 @@
 
 ---
 
-### 3. 🖼️ 图像搜索服务 (`image_search_mcp/`)
-
-**功能**: 基于内容的图像检索（CBIR）服务，使用 PLIP 模型提取病理切片图像特征，通过向量相似度搜索找到最相似的历史确诊病例。
-
-**核心工具**:
-- `search_similar_cases`: 通过图像搜索相似病例（支持 URL、Base64、文件路径）
-- `search_similar_cases_from_file`: 从文件路径搜索相似病例
-
-**端口**: `18930`
-
-**适用场景**:
-- 病理切片图像相似病例检索
-- 诊断参考案例查找
-- 组织形态学特征匹配
-- 病例库检索
-
-**数据集**: 使用 NCT-CRC-HE-100K 数据集（约 10 万张病理切片图像）
-
-📖 **详细文档**: 请查看 [`image_search_mcp/README.md`](image_search_mcp/README.md)
-
----
-
 ## 🚀 快速开始
 
 ### 前置要求
@@ -93,7 +100,33 @@
 
 每个服务都有独立的依赖和配置，请分别安装：
 
-#### 1. 病理报告解析服务
+#### 1. 图像搜索服务（推荐优先安装）
+
+**重要**: 图像搜索服务可以为病理图片诊断提供重要参考依据，建议优先安装和配置。
+
+```bash
+cd image_search_mcp
+conda create -n mcp-image-search-env python=3.11 -y
+conda activate mcp-image-search-env
+pip install -r requirements.txt
+
+# 构建图谱索引（开发测试：每个类别200张）
+python build_atlas.py \
+    --source_dir /path/to/NCT-CRC-HE-100K/versions/1/NCT-CRC-HE-100K \
+    --target_dir ./atlas_data_200 \
+    --images_per_category 200
+
+# 构建索引
+python indexer.py --atlas_dir ./atlas_data_200
+
+# 启动服务器
+python server.py
+# 服务器启动在 http://0.0.0.0:18930/sse
+```
+
+**注意**: 图像搜索服务需要先构建图谱索引才能使用。详细步骤请参考 [`image_search_mcp/README.md`](image_search_mcp/README.md)。
+
+#### 2. 病理报告解析服务
 
 ```bash
 cd pathology_mcp
@@ -102,7 +135,7 @@ python server.py
 # 服务器启动在 http://0.0.0.0:18910/sse
 ```
 
-#### 2. PubMed 文献搜索服务
+#### 3. PubMed 文献搜索服务
 
 ```bash
 cd pubmed_mcp
@@ -112,8 +145,6 @@ pip install -r requirements.txt
 python server.py
 # 服务器启动在 http://0.0.0.0:18920/sse
 ```
-
-#### 3. 图像搜索服务
 
 ```bash
 cd image_search_mcp
@@ -143,11 +174,11 @@ python server.py
 
 ### 服务对比
 
-| 服务 | 主要功能 | 技术栈 | 端口 | 依赖 |
-|------|---------|--------|------|------|
-| **病理报告解析** | 文本结构化提取 | FastMCP + 规则引擎 | 18910 | FastMCP |
-| **PubMed 搜索** | 文献检索 | FastMCP + NCBI API | 18920 | FastMCP + requests |
-| **图像搜索** | 相似病例检索 | FastMCP + PLIP + ChromaDB | 18930 | FastMCP + PyTorch + ChromaDB |
+| 服务 | 主要功能 | 技术栈 | 端口 | 依赖 | 诊断价值 |
+|------|---------|--------|------|------|---------|
+| **图像搜索** | 相似病例检索 | FastMCP + PLIP + ChromaDB | 18930 | FastMCP + PyTorch + ChromaDB | ⭐⭐⭐⭐⭐ 为病理图片诊断提供重要参考依据 |
+| **病理报告解析** | 文本结构化提取 | FastMCP + 规则引擎 | 18910 | FastMCP | ⭐⭐⭐⭐ 结构化提取诊断信息 |
+| **PubMed 搜索** | 文献检索 | FastMCP + NCBI API | 18920 | FastMCP + requests | ⭐⭐⭐ 提供文献参考 |
 
 ### 工作流程示例
 
@@ -156,7 +187,7 @@ python server.py
 ```
 1. 用户上传病理切片图像
    ↓
-2. 图像搜索服务 → 找到相似病例
+2. 图像搜索服务 → 找到相似病例（为诊断提供重要参考依据）
    ↓
 3. 用户输入病理报告文本
    ↓
@@ -166,6 +197,8 @@ python server.py
    ↓
 6. 综合结果 → 辅助诊断决策
 ```
+
+**核心价值**: 图像搜索服务通过视觉特征匹配，为病理医生提供相似历史病例的参考，这是病理诊断的重要依据之一。
 
 ---
 
@@ -243,11 +276,11 @@ python -m venv venv_image_search
 
    在 Nexent 的 MCP 配置中添加以下服务器：
 
-   | 服务名称 | MCP URL | 端口 |
-   |---------|---------|------|
-   | Pathology MCP | `http://172.17.0.1:18910/sse` | 18910 |
-   | PubMed MCP | `http://172.17.0.1:18920/sse` | 18920 |
-   | Image Search MCP | `http://172.17.0.1:18930/sse` | 18930 |
+   | 服务名称 | MCP URL | 端口 | 优先级 |
+   |---------|---------|------|--------|
+   | Image Search MCP | `http://172.17.0.1:18930/sse` | 18930 | ⭐⭐⭐⭐⭐ 推荐优先配置 |
+   | Pathology MCP | `http://172.17.0.1:18910/sse` | 18910 | ⭐⭐⭐⭐ |
+   | PubMed MCP | `http://172.17.0.1:18920/sse` | 18920 | ⭐⭐⭐ |
 
    **注意**: 
    - 如果 Nexent 在 Docker 中运行，使用 `172.17.0.1`（Docker 默认网关）
@@ -263,15 +296,16 @@ python -m venv venv_image_search
 
 ### 集成示例
 
-**在 Nexent 中使用图像搜索**：
+**在 Nexent 中使用图像搜索**（为病理图片诊断提供重要参考依据）：
 
 ```
-用户: 上传一张病理切片图片，帮我找相似的病例
+用户: 上传一张病理切片图片，帮我找相似的病例作为诊断参考
 
 Agent: 
 1. 调用 search_similar_cases 工具
 2. 返回 Top-5 相似病例
 3. 展示诊断类别和相似度得分
+4. 提供历史病例的视觉参考，辅助诊断决策
 ```
 
 **在 Nexent 中使用病理报告解析**：
