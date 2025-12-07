@@ -1,6 +1,6 @@
-# 病理报告解析 MCP Server
+# 医学报告解析 MCP Server
 
-基于 FastMCP 的病理报告结构化解析和基础解释服务，使用规则引擎从原始病理文本中提取结构化信息，并提供 IHC 标记和基因突变的临床意义解释。
+基于 FastMCP 的多类型医学报告结构化解析和基础解释服务，使用规则引擎从原始报告文本中提取结构化信息。支持肿瘤病理报告、血检报告、激素报告、肿瘤标志物报告等多种报告类型的解析，并提供 IHC 标记和基因突变的临床意义解释。
 
 ## 📋 目录
 
@@ -17,14 +17,14 @@
 
 ## 🔬 原理概述
 
-### 病理报告结构化解析
+### 医学报告结构化解析
 
-病理报告是临床诊断的重要依据，但通常以非结构化的文本形式存在。本 MCP 服务通过规则引擎和正则表达式，从原始病理文本中自动提取关键信息：
+医学报告（病理、血检、激素、肿瘤标志物等）是临床诊断的重要依据，但通常以非结构化的文本形式存在。本 MCP 服务通过规则引擎和正则表达式，从原始报告文本中自动提取关键信息：
 
 ```
-原始病理文本 → 规则匹配 → 结构化JSON → 临床解释
+原始报告文本 → 规则匹配 → 结构化JSON → 临床解释
      ↓              ↓           ↓            ↓
-  自由文本    正则表达式    字段提取    IHC/突变解释
+  自由文本    正则表达式    字段提取    异常值标记
 ```
 
 ### 核心处理流程
@@ -34,18 +34,25 @@
    - 转换为小写（部分字段）
    - 规范化空格和特殊字符
 
-2. **字段提取**
-   - **解剖部位**：匹配器官和组织类型（支持中英文）
-   - **分化程度**：提取肿瘤分级（G1-G4 或文字描述）
-   - **TNM 分期**：提取 pT/pN/pM 分期信息
-   - **病变大小**：提取尺寸信息（cm/mm）
-   - **IHC 标记**：提取免疫组化标记及其结果
-   - **基因突变**：提取常见驱动基因突变
-   - **关键术语**：识别重要病理学术语
+2. **通用数值提取**
+   - 支持多种格式：`项目名: 数值 单位`、`项目名 数值`、`项目名(数值)` 等
+   - 自动提取参考范围
+   - 标记异常值（超出参考范围）
 
-3. **临床解释**
+3. **报告类型识别**
+   - 根据关键词自动识别报告类型（血检、激素、肿瘤标志物、病理）
+   - 调用相应的提取函数
+
+4. **字段提取**
+   - **病理报告**：解剖部位、分化程度、TNM 分期、病变大小、IHC 标记、基因突变
+   - **血检报告**：血常规、肝功能、肾功能、血糖、血脂、凝血功能
+   - **激素报告**：甲状腺激素、性激素、皮质醇、胰岛素、生长激素
+   - **肿瘤标志物**：CEA、CA19-9、PSA、AFP 等
+
+5. **临床解释**
    - IHC 标记的临床意义提示
    - 基因突变的靶向治疗关联
+   - 异常值标记
 
 ---
 
@@ -64,7 +71,43 @@
 - `mutations`: 基因突变列表（基因名称和变异）
 - `key_terms`: 关键术语列表（如 invasive, carcinoma 等）
 
-### 2. `interpret_ihc` - IHC 标记解释
+### 2. `extract_blood_test_fields` - 血检报告字段提取
+
+从血检报告文本中提取结构化字段，包括血常规、生化、凝血功能等。
+
+**提取的字段**：
+- `wbc`: 白细胞计数
+- `rbc`: 红细胞计数
+- `hgb`: 血红蛋白
+- `plt`: 血小板
+- `liver_function`: 肝功能指标列表（ALT、AST、ALP、GGT、TBIL、DBIL、ALB、TP）
+- `kidney_function`: 肾功能指标列表（CREA、BUN、UA、eGFR）
+- `glucose`: 血糖
+- `lipid`: 血脂列表（CHOL、TG、HDL、LDL）
+- `coagulation`: 凝血功能列表（PT、APTT、INR、FIB、D-Dimer）
+- `all_values`: 所有检测项目的完整列表（包含数值、单位、参考范围、异常标记）
+
+### 3. `extract_hormone_fields` - 激素报告字段提取
+
+从激素检测报告文本中提取结构化字段。
+
+**提取的字段**：
+- `thyroid`: 甲状腺激素列表（TSH、FT3、FT4、T3、T4、rT3、TgAb、TPOAb、TRAb）
+- `sex_hormones`: 性激素列表（E2、P、T、LH、FSH、PRL、SHBG）
+- `cortisol`: 皮质醇（Cortisol、ACTH）
+- `insulin`: 胰岛素相关（Insulin、C-Peptide）
+- `growth_hormone`: 生长激素（GH、IGF-1）
+- `all_values`: 所有激素指标的完整列表
+
+### 4. `extract_tumor_marker_fields` - 肿瘤标志物字段提取
+
+从肿瘤标志物检测报告文本中提取结构化字段。
+
+**提取的字段**：
+- `markers`: 肿瘤标志物列表（CEA、CA19-9、CA125、PSA、AFP、CA15-3、CA72-4 等）
+- `all_values`: 所有标志物的完整列表（包含数值、单位、参考范围、异常标记）
+
+### 5. `interpret_ihc` - IHC 标记解释
 
 对常见免疫组化（IHC）标记提供临床意义解释。
 
@@ -75,7 +118,7 @@
 - HER2（HER2 扩增）
 - Ki67（增殖指数）
 
-### 3. `map_mutations` - 基因突变映射
+### 6. `map_mutations` - 基因突变映射
 
 将常见驱动基因突变映射到临床意义和靶向治疗关联。
 
@@ -180,9 +223,12 @@ python server.py
    - 如果同机运行：`http://localhost:18910/sse`
 
 2. **可用工具**:
-   - `extract_pathology_fields`
-   - `interpret_ihc`
-   - `map_mutations`
+   - `extract_pathology_fields` - 病理报告字段提取
+   - `extract_blood_test_fields` - 血检报告字段提取
+   - `extract_hormone_fields` - 激素报告字段提取
+   - `extract_tumor_marker_fields` - 肿瘤标志物字段提取
+   - `interpret_ihc` - IHC 标记解释
+   - `map_mutations` - 基因突变映射
 
 ---
 
@@ -245,7 +291,117 @@ P40(negative): 鳞系标志，鳞癌常阳性
 Ki67(30%): 增殖指数，数值越高增殖越强
 ```
 
-### 工具 3: `map_mutations`
+### 工具 3: `extract_blood_test_fields`
+
+**描述**: 从血检报告文本中提取结构化字段。
+
+**参数**:
+
+| 参数名 | 类型 | 必需 | 说明 |
+|--------|------|------|------|
+| `report_text` | string | 是 | 血检报告文本（支持中英文，支持多种格式） |
+
+**返回格式**:
+
+```json
+{
+  "wbc": {
+    "item": "WBC",
+    "value": "6.5",
+    "unit": "×10^9/L",
+    "reference_range": "3.5-10.0",
+    "abnormal": false
+  },
+  "hgb": {
+    "item": "HGB",
+    "value": "125",
+    "unit": "g/L",
+    "reference_range": "120-160",
+    "abnormal": false
+  },
+  "liver_function": [
+    {
+      "item": "ALT",
+      "value": "45",
+      "unit": "U/L",
+      "reference_range": "0-40",
+      "abnormal": true
+    }
+  ],
+  "all_values": [...]
+}
+```
+
+### 工具 4: `extract_hormone_fields`
+
+**描述**: 从激素检测报告文本中提取结构化字段。
+
+**参数**:
+
+| 参数名 | 类型 | 必需 | 说明 |
+|--------|------|------|------|
+| `report_text` | string | 是 | 激素检测报告文本（支持中英文，支持多种格式） |
+
+**返回格式**:
+
+```json
+{
+  "thyroid": [
+    {
+      "item": "TSH",
+      "value": "2.5",
+      "unit": "mIU/L",
+      "reference_range": "0.4-4.0",
+      "abnormal": false
+    },
+    {
+      "item": "FT3",
+      "value": "4.2",
+      "unit": "pmol/L",
+      "reference_range": "3.1-6.8",
+      "abnormal": false
+    }
+  ],
+  "sex_hormones": [...],
+  "all_values": [...]
+}
+```
+
+### 工具 5: `extract_tumor_marker_fields`
+
+**描述**: 从肿瘤标志物检测报告文本中提取结构化字段。
+
+**参数**:
+
+| 参数名 | 类型 | 必需 | 说明 |
+|--------|------|------|------|
+| `report_text` | string | 是 | 肿瘤标志物检测报告文本（支持中英文，支持多种格式） |
+
+**返回格式**:
+
+```json
+{
+  "markers": [
+    {
+      "item": "CEA",
+      "value": "5.2",
+      "unit": "ng/mL",
+      "reference_range": "0-5.0",
+      "abnormal": true
+    },
+    {
+      "item": "CA19-9",
+      "value": "25.0",
+      "unit": "U/mL",
+      "reference_range": "0-37",
+      "abnormal": false
+    }
+  ],
+  "all_values": [...]
+}
+```
+
+### 工具 6: `map_mutations`
 
 **描述**: 将基因突变映射到临床意义和靶向治疗关联。
 
@@ -323,7 +479,138 @@ P40(negative): 鳞系标志，鳞癌常阳性
 ER(positive): 乳腺/妇科相关，ER阳性提示激素相关
 ```
 
-### 示例 3: 映射基因突变
+### 示例 3: 提取血检报告字段
+
+**输入文本**：
+```
+血常规检查：
+WBC: 6.5 ×10^9/L (参考范围: 3.5-10.0)
+RBC: 4.2 ×10^12/L (参考范围: 4.0-5.5)
+HGB: 125 g/L (参考范围: 120-160)
+PLT: 220 ×10^9/L (参考范围: 100-300)
+
+肝功能：
+ALT: 45 U/L (参考范围: 0-40)
+AST: 38 U/L (参考范围: 0-40)
+TBIL: 15.2 μmol/L (参考范围: 5.0-21.0)
+
+肾功能：
+CREA: 85 μmol/L (参考范围: 60-110)
+BUN: 5.2 mmol/L (参考范围: 2.9-7.1)
+```
+
+**输出**：
+```json
+{
+  "wbc": {
+    "item": "WBC",
+    "value": "6.5",
+    "unit": "×10^9/L",
+    "reference_range": "3.5-10.0",
+    "abnormal": false
+  },
+  "hgb": {
+    "item": "HGB",
+    "value": "125",
+    "unit": "g/L",
+    "reference_range": "120-160",
+    "abnormal": false
+  },
+  "liver_function": [
+    {
+      "item": "ALT",
+      "value": "45",
+      "unit": "U/L",
+      "reference_range": "0-40",
+      "abnormal": true
+    }
+  ],
+  "all_values": [...]
+}
+```
+
+### 示例 4: 提取激素报告字段
+
+**输入文本**：
+```
+甲状腺功能检查：
+TSH: 2.5 mIU/L (参考范围: 0.4-4.0)
+FT3: 4.2 pmol/L (参考范围: 3.1-6.8)
+FT4: 15.5 pmol/L (参考范围: 12.0-22.0)
+
+性激素检查：
+E2: 180 pg/mL (参考范围: 50-300)
+P: 15 ng/mL (参考范围: 5-20)
+T: 6.5 ng/mL (参考范围: 2.5-10.0)
+```
+
+**输出**：
+```json
+{
+  "thyroid": [
+    {
+      "item": "TSH",
+      "value": "2.5",
+      "unit": "mIU/L",
+      "reference_range": "0.4-4.0",
+      "abnormal": false
+    },
+    {
+      "item": "FT3",
+      "value": "4.2",
+      "unit": "pmol/L",
+      "reference_range": "3.1-6.8",
+      "abnormal": false
+    }
+  ],
+  "sex_hormones": [
+    {
+      "item": "E2",
+      "value": "180",
+      "unit": "pg/mL",
+      "reference_range": "50-300",
+      "abnormal": false
+    }
+  ],
+  "all_values": [...]
+}
+```
+
+### 示例 5: 提取肿瘤标志物字段
+
+**输入文本**：
+```
+肿瘤标志物检查：
+CEA: 5.2 ng/mL (参考范围: 0-5.0)
+CA19-9: 25.0 U/mL (参考范围: 0-37)
+CA125: 18.5 U/mL (参考范围: 0-35)
+PSA: 2.8 ng/mL (参考范围: 0-4.0)
+```
+
+**输出**：
+```json
+{
+  "markers": [
+    {
+      "item": "CEA",
+      "value": "5.2",
+      "unit": "ng/mL",
+      "reference_range": "0-5.0",
+      "abnormal": true
+    },
+    {
+      "item": "CA19-9",
+      "value": "25.0",
+      "unit": "U/mL",
+      "reference_range": "0-37",
+      "abnormal": false
+    }
+  ],
+  "all_values": [...]
+}
+```
+
+### 示例 6: 映射基因突变
 
 **输入**：
 ```
@@ -376,6 +663,31 @@ KRAS: G12C -> KRAS 驱动，特定亚型有靶向（如 G12C）
 
 - **NSCLC**: EGFR, ALK, KRAS, BRAF, ROS1, MET, RET
 - **其他**: HER2, PIK3CA
+
+### 支持的检测项目
+
+#### 血检项目
+
+- **血常规**: WBC, RBC, HGB, HCT, PLT, MCV, MCH, MCHC
+- **肝功能**: ALT, AST, ALP, GGT, TBIL, DBIL, ALB, TP
+- **肾功能**: CREA, BUN, UA, eGFR
+- **血糖**: GLU, HbA1c
+- **血脂**: CHOL, TG, HDL, LDL
+- **凝血功能**: PT, APTT, INR, FIB, D-Dimer
+
+#### 激素项目
+
+- **甲状腺激素**: TSH, FT3, FT4, T3, T4, rT3, TgAb, TPOAb, TRAb
+- **性激素**: E2, P, T, LH, FSH, PRL, SHBG
+- **皮质醇**: Cortisol, ACTH
+- **胰岛素相关**: Insulin, C-Peptide
+- **生长激素**: GH, IGF-1
+
+#### 肿瘤标志物
+
+- **常见标志物**: CEA, CA19-9, CA125, CA15-3, CA72-4, CA242
+- **器官特异性**: PSA, fPSA, AFP
+- **其他**: CYFRA21-1, NSE, SCC, HE4, ProGRP
 
 ---
 
@@ -489,3 +801,5 @@ pathology_mcp/
 ---
 
 **最后更新**: 2025-12-07
+
+**版本**: 2.0 - 支持多类型医学报告解析

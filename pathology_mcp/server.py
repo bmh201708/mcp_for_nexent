@@ -1,8 +1,12 @@
 """
 Pathology MCP Server (rule-based starter).
-- extract_pathology_fields: parse raw pathology text into structured JSON.
-- interpret_ihc: simple rule-based hints for common IHC markers/panels.
-- map_mutations: simple mapping for common mutations.
+支持多种医学报告类型的结构化解析：
+- extract_pathology_fields: 肿瘤病理报告字段提取
+- extract_blood_test_fields: 血检报告字段提取
+- extract_hormone_fields: 激素报告字段提取
+- extract_tumor_marker_fields: 肿瘤标志物报告字段提取
+- interpret_ihc: IHC 标记解释
+- map_mutations: 基因突变映射
 
 Run:
   conda activate mcp-env  # env with fastmcp installed
@@ -82,6 +86,96 @@ MUT_ALIASES = {
     "ERBB2": "HER2",
 }
 
+# 血检项目关键词映射
+BLOOD_TEST_KEYWORDS = {
+    # 血常规
+    "wbc": ["WBC", "白细胞", "白细胞计数", "white blood cell", "leukocyte"],
+    "rbc": ["RBC", "红细胞", "红细胞计数", "red blood cell", "erythrocyte"],
+    "hgb": ["HGB", "Hb", "血红蛋白", "hemoglobin"],
+    "hct": ["HCT", "Ht", "红细胞压积", "hematocrit"],
+    "plt": ["PLT", "血小板", "血小板计数", "platelet"],
+    "mcv": ["MCV", "平均红细胞体积"],
+    "mch": ["MCH", "平均血红蛋白量"],
+    "mchc": ["MCHC", "平均血红蛋白浓度"],
+    # 肝功能
+    "alt": ["ALT", "GPT", "丙氨酸转氨酶", "alanine aminotransferase"],
+    "ast": ["AST", "GOT", "天冬氨酸转氨酶", "aspartate aminotransferase"],
+    "alp": ["ALP", "ALKP", "碱性磷酸酶", "alkaline phosphatase"],
+    "ggt": ["GGT", "γ-GT", "γ-谷氨酰转肽酶", "gamma-glutamyl transferase"],
+    "tbil": ["TBIL", "总胆红素", "total bilirubin"],
+    "dbil": ["DBIL", "直接胆红素", "direct bilirubin"],
+    "alb": ["ALB", "白蛋白", "albumin"],
+    "tp": ["TP", "总蛋白", "total protein"],
+    # 肾功能
+    "crea": ["CREA", "Cr", "肌酐", "creatinine"],
+    "bun": ["BUN", "urea", "尿素氮", "blood urea nitrogen"],
+    "ua": ["UA", "uric acid", "尿酸"],
+    "egfr": ["eGFR", "估算肾小球滤过率"],
+    # 血糖
+    "glucose": ["GLU", "GLUC", "血糖", "glucose", "blood glucose"],
+    "hba1c": ["HbA1c", "糖化血红蛋白", "glycated hemoglobin"],
+    # 血脂
+    "chol": ["CHOL", "TC", "总胆固醇", "total cholesterol"],
+    "tg": ["TG", "triglyceride", "甘油三酯", "triglycerides"],
+    "hdl": ["HDL", "HDL-C", "高密度脂蛋白", "high-density lipoprotein"],
+    "ldl": ["LDL", "LDL-C", "低密度脂蛋白", "low-density lipoprotein"],
+    # 凝血功能
+    "pt": ["PT", "凝血酶原时间", "prothrombin time"],
+    "aptt": ["APTT", "PTT", "活化部分凝血活酶时间", "activated partial thromboplastin time"],
+    "inr": ["INR", "国际标准化比值", "international normalized ratio"],
+    "fib": ["FIB", "fibrinogen", "纤维蛋白原"],
+    "ddimer": ["D-Dimer", "D-二聚体"],
+}
+
+# 激素项目关键词映射
+HORMONE_KEYWORDS = {
+    # 甲状腺激素
+    "tsh": ["TSH", "促甲状腺激素", "thyroid stimulating hormone"],
+    "ft3": ["FT3", "fT3", "游离T3", "free T3"],
+    "ft4": ["FT4", "fT4", "游离T4", "free T4"],
+    "t3": ["T3", "三碘甲状腺原氨酸", "triiodothyronine"],
+    "t4": ["T4", "甲状腺素", "thyroxine"],
+    "rt3": ["rT3", "reverse T3", "反T3"],
+    "tgab": ["TgAb", "抗甲状腺球蛋白抗体"],
+    "tpoab": ["TPOAb", "抗甲状腺过氧化物酶抗体"],
+    "trab": ["TRAb", "促甲状腺激素受体抗体"],
+    # 性激素
+    "e2": ["E2", "estradiol", "雌二醇"],
+    "p": ["P", "progesterone", "孕酮", "黄体酮"],
+    "t": ["T", "testosterone", "睾酮", "睾丸素"],
+    "lh": ["LH", "luteinizing hormone", "促黄体生成素"],
+    "fsh": ["FSH", "follicle stimulating hormone", "促卵泡刺激素"],
+    "prl": ["PRL", "prolactin", "催乳素", "泌乳素"],
+    "shbg": ["SHBG", "性激素结合球蛋白"],
+    # 皮质醇
+    "cortisol": ["cortisol", "CORT", "皮质醇", "可的松"],
+    "acth": ["ACTH", "促肾上腺皮质激素", "adrenocorticotropic hormone"],
+    # 胰岛素相关
+    "insulin": ["insulin", "INS", "胰岛素"],
+    "cpeptide": ["C-Peptide", "C肽", "C-peptide"],
+    # 生长激素
+    "gh": ["GH", "growth hormone", "生长激素"],
+    "igf1": ["IGF-1", "胰岛素样生长因子1"],
+}
+
+# 肿瘤标志物关键词映射
+TUMOR_MARKER_KEYWORDS = {
+    "cea": ["CEA", "癌胚抗原", "carcinoembryonic antigen"],
+    "ca199": ["CA19-9", "CA199", "糖链抗原19-9"],
+    "ca125": ["CA125", "糖链抗原125"],
+    "ca153": ["CA15-3", "CA153", "糖链抗原15-3"],
+    "ca724": ["CA72-4", "CA724", "糖链抗原72-4"],
+    "psa": ["PSA", "前列腺特异性抗原", "prostate specific antigen"],
+    "fpsa": ["fPSA", "游离PSA", "free PSA"],
+    "afp": ["AFP", "甲胎蛋白", "alpha-fetoprotein"],
+    "ca242": ["CA242", "糖链抗原242"],
+    "cyfra211": ["CYFRA21-1", "细胞角蛋白19片段"],
+    "nse": ["NSE", "神经元特异性烯醇化酶"],
+    "scc": ["SCC", "鳞状细胞癌抗原"],
+    "he4": ["HE4", "人附睾蛋白4"],
+    "progrp": ["ProGRP", "胃泌素释放肽前体"],
+}
+
 
 def _normalize_text(text: str) -> str:
     """Basic normalization: lowercase, unify punctuation/spacing."""
@@ -90,6 +184,96 @@ def _normalize_text(text: str) -> str:
     norm = norm.replace("×", "x")
     norm = norm.lower()
     return norm
+
+
+def _extract_lab_values(text: str) -> List[Dict[str, str]]:
+    """
+    通用实验室数值提取函数。
+    支持多种格式：
+    - 项目名: 数值 单位
+    - 项目名 数值 单位
+    - 项目名(数值) 单位
+    - 项目名 数值 (参考范围)
+    """
+    values = []
+    # 匹配格式：项目名: 数值 单位 (参考范围)
+    pattern1 = re.compile(
+        r"([A-Za-z0-9+\-\./]+)\s*[:：]\s*([0-9]+\.?[0-9]*)\s*([A-Za-z0-9^/μ×\-\.%]+)?\s*(?:\(([0-9]+\.?[0-9]*)\s*[-~至]\s*([0-9]+\.?[0-9]*)\))?",
+        re.IGNORECASE
+    )
+    # 匹配格式：项目名 数值 单位
+    pattern2 = re.compile(
+        r"([A-Za-z0-9+\-\./]+)\s+([0-9]+\.?[0-9]*)\s+([A-Za-z0-9^/μ×\-\.%]+)",
+        re.IGNORECASE
+    )
+    # 匹配格式：项目名(数值) 单位
+    pattern3 = re.compile(
+        r"([A-Za-z0-9+\-\./]+)\s*\(([0-9]+\.?[0-9]*)\)\s*([A-Za-z0-9^/μ×\-\.%]+)?",
+        re.IGNORECASE
+    )
+    
+    for pattern in [pattern1, pattern2, pattern3]:
+        for m in pattern.finditer(text):
+            item_name = m.group(1).strip()
+            value = m.group(2).strip()
+            unit = m.group(3).strip() if m.group(3) else ""
+            ref_low = m.group(4) if len(m.groups()) >= 4 and m.group(4) else None
+            ref_high = m.group(5) if len(m.groups()) >= 5 and m.group(5) else None
+            
+            item = {
+                "item": item_name,
+                "value": value,
+                "unit": unit,
+            }
+            if ref_low and ref_high:
+                item["reference_range"] = f"{ref_low}-{ref_high}"
+                try:
+                    val_float = float(value)
+                    low_float = float(ref_low)
+                    high_float = float(ref_high)
+                    item["abnormal"] = val_float < low_float or val_float > high_float
+                except ValueError:
+                    item["abnormal"] = None
+            else:
+                item["abnormal"] = None
+            
+            # 避免重复添加
+            if not any(v["item"] == item_name and v["value"] == value for v in values):
+                values.append(item)
+    
+    return values
+
+
+def _detect_report_type(text: str) -> str:
+    """根据关键词识别报告类型"""
+    text_lower = text.lower()
+    
+    # 血检关键词
+    blood_keywords = ["血常规", "血检", "生化", "肝功能", "肾功能", "凝血", "wbc", "rbc", "hgb", "plt", "alt", "ast", "crea", "bun"]
+    # 激素关键词
+    hormone_keywords = ["激素", "tsh", "ft3", "ft4", "甲状腺", "性激素", "皮质醇", "insulin", "cortisol", "e2", "p", "t", "lh", "fsh"]
+    # 肿瘤标志物关键词
+    tumor_marker_keywords = ["肿瘤标志物", "cea", "ca19-9", "ca125", "psa", "afp", "ca153"]
+    # 病理关键词
+    pathology_keywords = ["病理", "病理诊断", "免疫组化", "ihc", "分化", "tnm", "carcinoma", "adenocarcinoma"]
+    
+    blood_score = sum(1 for kw in blood_keywords if kw in text_lower)
+    hormone_score = sum(1 for kw in hormone_keywords if kw in text_lower)
+    tumor_marker_score = sum(1 for kw in tumor_marker_keywords if kw in text_lower)
+    pathology_score = sum(1 for kw in pathology_keywords if kw in text_lower)
+    
+    scores = {
+        "blood_test": blood_score,
+        "hormone": hormone_score,
+        "tumor_marker": tumor_marker_score,
+        "pathology": pathology_score,
+    }
+    
+    max_score = max(scores.values())
+    if max_score == 0:
+        return "unknown"
+    
+    return max(scores.items(), key=lambda x: x[1])[0]
 
 
 def _match_site(text: str) -> Optional[str]:
@@ -146,6 +330,176 @@ def _extract_stage(text: str) -> Optional[str]:
     if m:
         return m.group(0)
     return None
+
+
+def _extract_blood_test_fields(text: str) -> Dict:
+    """提取血检报告字段"""
+    all_values = _extract_lab_values(text)
+    text_upper = text.upper()
+    
+    # 分类提取
+    wbc = None
+    rbc = None
+    hgb = None
+    plt = None
+    alt = None
+    ast = None
+    crea = None
+    bun = None
+    glucose = None
+    chol = None
+    tg = None
+    hdl = None
+    ldl = None
+    pt = None
+    aptt = None
+    inr = None
+    
+    # 从 all_values 中查找特定项目
+    for item in all_values:
+        item_name_upper = item["item"].upper()
+        for key, keywords in BLOOD_TEST_KEYWORDS.items():
+            if any(kw.upper() in item_name_upper for kw in keywords):
+                if key == "wbc" and wbc is None:
+                    wbc = item
+                elif key == "rbc" and rbc is None:
+                    rbc = item
+                elif key == "hgb" and hgb is None:
+                    hgb = item
+                elif key == "plt" and plt is None:
+                    plt = item
+                elif key == "alt" and alt is None:
+                    alt = item
+                elif key == "ast" and ast is None:
+                    ast = item
+                elif key == "crea" and crea is None:
+                    crea = item
+                elif key == "bun" and bun is None:
+                    bun = item
+                elif key == "glucose" and glucose is None:
+                    glucose = item
+                elif key == "chol" and chol is None:
+                    chol = item
+                elif key == "tg" and tg is None:
+                    tg = item
+                elif key == "hdl" and hdl is None:
+                    hdl = item
+                elif key == "ldl" and ldl is None:
+                    ldl = item
+                elif key == "pt" and pt is None:
+                    pt = item
+                elif key == "aptt" and aptt is None:
+                    aptt = item
+                elif key == "inr" and inr is None:
+                    inr = item
+    
+    # 肝功能指标
+    liver_function = []
+    for item in all_values:
+        item_name_upper = item["item"].upper()
+        if any(kw.upper() in item_name_upper for kw in ["ALT", "AST", "ALP", "GGT", "TBIL", "DBIL", "ALB", "TP"]):
+            liver_function.append(item)
+    
+    # 肾功能指标
+    kidney_function = []
+    for item in all_values:
+        item_name_upper = item["item"].upper()
+        if any(kw.upper() in item_name_upper for kw in ["CREA", "BUN", "UA", "eGFR"]):
+            kidney_function.append(item)
+    
+    # 血脂指标
+    lipid = []
+    for item in all_values:
+        item_name_upper = item["item"].upper()
+        if any(kw.upper() in item_name_upper for kw in ["CHOL", "TG", "HDL", "LDL"]):
+            lipid.append(item)
+    
+    # 凝血功能
+    coagulation = []
+    for item in all_values:
+        item_name_upper = item["item"].upper()
+        if any(kw.upper() in item_name_upper for kw in ["PT", "APTT", "INR", "FIB", "D-Dimer"]):
+            coagulation.append(item)
+    
+    return {
+        "wbc": wbc,
+        "rbc": rbc,
+        "hgb": hgb,
+        "plt": plt,
+        "liver_function": liver_function if liver_function else None,
+        "kidney_function": kidney_function if kidney_function else None,
+        "glucose": glucose,
+        "lipid": lipid if lipid else None,
+        "coagulation": coagulation if coagulation else None,
+        "all_values": all_values,
+    }
+
+
+def _extract_hormone_fields(text: str) -> Dict:
+    """提取激素报告字段"""
+    all_values = _extract_lab_values(text)
+    text_upper = text.upper()
+    
+    # 分类提取
+    thyroid = []
+    sex_hormones = []
+    cortisol = None
+    insulin = None
+    growth_hormone = None
+    
+    for item in all_values:
+        item_name_upper = item["item"].upper()
+        # 甲状腺激素
+        if any(kw.upper() in item_name_upper for kw in ["TSH", "FT3", "FT4", "T3", "T4", "rT3", "TgAb", "TPOAb", "TRAb"]):
+            thyroid.append(item)
+        # 性激素
+        elif any(kw.upper() in item_name_upper for kw in ["E2", "ESTRADIOL", "P", "PROGESTERONE", "T", "TESTOSTERONE", "LH", "FSH", "PRL", "PROLACTIN", "SHBG"]):
+            sex_hormones.append(item)
+        # 皮质醇
+        elif any(kw.upper() in item_name_upper for kw in ["CORTISOL", "CORT", "ACTH"]):
+            if cortisol is None:
+                cortisol = item
+        # 胰岛素相关
+        elif any(kw.upper() in item_name_upper for kw in ["INSULIN", "INS", "C-PEPTIDE", "CPEPTIDE"]):
+            if insulin is None:
+                insulin = item
+        # 生长激素
+        elif any(kw.upper() in item_name_upper for kw in ["GH", "GROWTH HORMONE", "IGF-1", "IGF1"]):
+            if growth_hormone is None:
+                growth_hormone = item
+    
+    return {
+        "thyroid": thyroid if thyroid else None,
+        "sex_hormones": sex_hormones if sex_hormones else None,
+        "cortisol": cortisol,
+        "insulin": insulin,
+        "growth_hormone": growth_hormone,
+        "all_values": all_values,
+    }
+
+
+def _extract_tumor_marker_fields(text: str) -> Dict:
+    """提取肿瘤标志物报告字段"""
+    all_values = _extract_lab_values(text)
+    text_upper = text.upper()
+    
+    markers = []
+    
+    for item in all_values:
+        item_name_upper = item["item"].upper()
+        # 检查是否是肿瘤标志物
+        is_marker = False
+        for key, keywords in TUMOR_MARKER_KEYWORDS.items():
+            if any(kw.upper() in item_name_upper for kw in keywords):
+                is_marker = True
+                break
+        if is_marker:
+            markers.append(item)
+    
+    return {
+        "markers": markers if markers else None,
+        "all_values": all_values,
+    }
 
 
 @mcp.tool(name="extract_pathology_fields", description="提取病理报告的结构化字段，返回 JSON 字符串")
@@ -228,6 +582,30 @@ def map_mutations(mutations_text: str) -> str:
         hint = MUTATION_HINTS.get(gene, "无预置提示，需结合变异类型和指南")
         rows.append(f"{gene}: {value} -> {hint}")
     return "\n".join(rows) if rows else "未能解析突变输入"
+
+
+@mcp.tool(name="extract_blood_test_fields", description="提取血检报告的结构化字段，包括血常规、生化、凝血功能等，返回 JSON 字符串")
+def extract_blood_test_fields(report_text: str) -> str:
+    """Parse blood test report into structured fields."""
+    text = report_text or ""
+    data = _extract_blood_test_fields(text)
+    return json.dumps(data, ensure_ascii=False, default=str)
+
+
+@mcp.tool(name="extract_hormone_fields", description="提取激素报告的结构化字段，包括甲状腺激素、性激素、皮质醇等，返回 JSON 字符串")
+def extract_hormone_fields(report_text: str) -> str:
+    """Parse hormone test report into structured fields."""
+    text = report_text or ""
+    data = _extract_hormone_fields(text)
+    return json.dumps(data, ensure_ascii=False, default=str)
+
+
+@mcp.tool(name="extract_tumor_marker_fields", description="提取肿瘤标志物报告的结构化字段，包括 CEA、CA19-9、PSA 等，返回 JSON 字符串")
+def extract_tumor_marker_fields(report_text: str) -> str:
+    """Parse tumor marker report into structured fields."""
+    text = report_text or ""
+    data = _extract_tumor_marker_fields(text)
+    return json.dumps(data, ensure_ascii=False, default=str)
 
 
 if __name__ == "__main__":

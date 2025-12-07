@@ -44,3 +44,4 @@ echo "2. 构建图谱索引: python indexer.py --atlas_dir ./atlas_data"
 echo "3. 启动服务器: python server.py"
 echo
 
+
