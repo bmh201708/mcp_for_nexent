@@ -48,11 +48,12 @@ GRADE_PATTERNS = [
     (r"well[- ]differentiated|highly differentiated", "well differentiated"),
     (r"moderately[- ]differentiated", "moderately differentiated"),
     (r"poorly[- ]differentiated|poorly diff", "poorly differentiated"),
-    (r"G([1-4])", None),
+    (r"g([1-4])", None),  # 改为小写，因为文本会被normalize为小写
 ]
-STAGE_REGEX = re.compile(r"pT\d[a-z]?(?:\s*/\s*pN\d[a-z]?)?(?:\s*/\s*pM[0-1])?", re.IGNORECASE)
+STAGE_REGEX = re.compile(r"pT\d+[a-z]?(?:N\d+[a-z]?)?(?:M[0-1])?|pT\d+[a-z]?(?:\s*/\s*pN\d+[a-z]?)?(?:\s*/\s*pM[0-1])?", re.IGNORECASE)
 SIZE_REGEX = re.compile(r"(\d+(?:\.\d+)?\s*(?:x|×)\s*\d+(?:\.\d+)?\s*(?:cm|mm))", re.IGNORECASE)
-IHC_ITEM_REGEX = re.compile(r"([A-Za-z0-9+\-\.]+)\s*[:：]?\s*([0-3]\+|\+{1,3}|-?|positive|negative|弱阳性|强阳性|阴性|阳性)", re.IGNORECASE)
+# 改进 IHC 正则：要求标记名称至少包含一个字母，且结果部分必须明确
+IHC_ITEM_REGEX = re.compile(r"([A-Za-z][A-Za-z0-9\-/\.]*)\s*[:：]?\s*\(?([0-3]\+|\+{1,3}|-|negative|positive|弱阳性|强阳性|阴性|阳性|%?\d+%?)\)?", re.IGNORECASE)
 MUTATION_REGEX = re.compile(r"(EGFR|ALK|KRAS|BRAF|HER2|ER|PR|PIK3CA|ROS1|MET|RET|NTRK)\s*[:：\-]?\s*([A-Za-z0-9.+\-_/]+)", re.IGNORECASE)
 
 IHC_HINTS = {
@@ -286,6 +287,15 @@ def _match_site(text: str) -> Optional[str]:
 
 
 def _extract_grade(text: str) -> Optional[str]:
+    # 先尝试在原始文本中搜索（保持大小写），因为 G3 等格式需要大写
+    for pat, label in GRADE_PATTERNS:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            if label:
+                return label
+            if m.groups():
+                return f"G{m.group(1)}"
+    # 如果没找到，再尝试小写版本
     low = _normalize_text(text)
     for pat, label in GRADE_PATTERNS:
         m = re.search(pat, low)
@@ -299,12 +309,57 @@ def _extract_grade(text: str) -> Optional[str]:
 
 def _extract_ihc(text: str) -> List[Dict[str, str]]:
     items = []
-    for m in IHC_ITEM_REGEX.finditer(text):
-        raw = m.group(1).strip().upper()
-        marker_key = raw.replace("-", "").replace("/", "")
-        canonical = IHC_ALIASES.get(marker_key, raw)
-        result = m.group(2).strip()
-        items.append({"marker": canonical, "result": result})
+    # 已知的 IHC 标记名称列表（用于过滤误匹配）
+    known_markers = {
+        "TTF-1", "TTF1", "NAPSIN", "NAPSA", "P40", "CK5/6", "CK5-6", "CK5", "CK6",
+        "ER", "PR", "HER2", "KI67", "KI-67", "CD20", "CD3", "CD5", "CD10",
+        "CD19", "CD23", "CD30", "CD45", "CD56", "CD79A", "CD138", "BCL2",
+        "BCL6", "MYC", "P53", "P63", "P16", "VIMENTIN", "SMA", "DESMIN",
+        "SYN", "CHROMOGRANIN", "CDX2", "Villin", "CEA", "PSA", "PSAP"
+    }
+    
+    # 改进的正则：匹配 "标记名(结果)" 或 "标记名: 结果" 格式
+    # 优先匹配已知标记名称
+    patterns = [
+        # 格式：TTF-1(+), Napsin(+), P40(-)
+        re.compile(r"([A-Za-z][A-Za-z0-9\-/\.]+)\s*\(([0-3]\+|\+{1,3}|-|negative|positive|弱阳性|强阳性|阴性|阳性|%?\d+%?)\)", re.IGNORECASE),
+        # 格式：TTF-1: positive, P40: negative
+        re.compile(r"([A-Za-z][A-Za-z0-9\-/\.]+)\s*[:：]\s*([0-3]\+|\+{1,3}|-|negative|positive|弱阳性|强阳性|阴性|阳性|%?\d+%?)", re.IGNORECASE),
+    ]
+    
+    for pattern in patterns:
+        for m in pattern.finditer(text):
+            raw = m.group(1).strip().upper()
+            result = m.group(2).strip()
+            
+            # 过滤掉明显不是标记的内容
+            if len(raw) < 2 or raw.isdigit() or raw in ["X", "CM", "TNM", "PT", "N", "M", "G3", "G2", "G1", "G4"]:
+                continue
+            
+            # 过滤掉纯数字或单个字符的结果
+            if result.isdigit() and len(result) > 2:  # 允许百分比数字如 "30"
+                continue
+            
+            marker_key = raw.replace("-", "").replace("/", "")
+            canonical = IHC_ALIASES.get(marker_key, raw)
+            
+            # 如果不在已知标记列表中，且不是通过别名匹配的，需要进一步验证
+            if canonical not in known_markers and marker_key not in IHC_ALIASES:
+                # 检查是否包含常见标记的关键词
+                if not any(keyword in canonical for keyword in ["CD", "CK", "TTF", "NAPSIN", "P40", "ER", "PR", "HER", "KI"]):
+                    continue
+            
+            # 清理结果：统一格式
+            result_clean = result.replace("(", "").replace(")", "").strip()
+            if result_clean.lower() in ["positive", "阳性", "弱阳性", "强阳性"]:
+                result_clean = "+"
+            elif result_clean.lower() in ["negative", "阴性"]:
+                result_clean = "-"
+            
+            # 避免重复添加
+            if not any(item["marker"] == canonical and item["result"] == result_clean for item in items):
+                items.append({"marker": canonical, "result": result_clean})
+    
     return items
 
 
@@ -326,6 +381,13 @@ def _extract_size(text: str) -> Optional[str]:
 
 
 def _extract_stage(text: str) -> Optional[str]:
+    # 先尝试匹配连续格式（如 pT2N1M0）
+    continuous_pattern = re.compile(r"pT\d+[a-z]?N\d+[a-z]?M[0-1]", re.IGNORECASE)
+    m = continuous_pattern.search(text)
+    if m:
+        return m.group(0)
+    
+    # 再尝试匹配标准格式（如 pT2/pN1/pM0）
     m = STAGE_REGEX.search(text)
     if m:
         return m.group(0)
@@ -515,8 +577,10 @@ def extract_pathology_fields(report_text: str) -> str:
     size = _extract_size(text)
 
     key_terms = []
+    # 在原始文本中搜索关键术语（保持大小写不敏感）
+    text_lower = text.lower()
     for term in ["invasive", "carcinoma", "adenocarcinoma", "squamous", "necrosis", "metastasis", "dysplasia", "sarcoma", "lymphoma"]:
-        if term in norm:
+        if term in text_lower:
             key_terms.append(term)
 
     data = {
